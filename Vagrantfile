@@ -16,7 +16,7 @@ $image_version = "current"
 $enable_serial_logging = false
 $share_home = false
 $vm_gui = false
-$vm_memory = 1024
+$vm_memory = 4096
 $vm_cpus = 1
 $shared_folders = {}
 $forwarded_ports = {}
@@ -72,9 +72,11 @@ Vagrant.configure("2") do |config|
     config.vbguest.auto_update = false
   end
 
+
   (1..$num_instances).each do |i|
     config.vm.define vm_name = "%s-%02d" % [$instance_name_prefix, i] do |config|
       config.vm.hostname = vm_name
+
 
       if $enable_serial_logging
         logdir = File.join(File.dirname(__FILE__), "log")
@@ -118,6 +120,13 @@ Vagrant.configure("2") do |config|
         vb.gui = vm_gui
         vb.memory = vm_memory
         vb.cpus = vm_cpus
+
+        file_to_disk = "/tmp/vagrant-extra-space-#{vm_name}.vdi"
+
+        unless File.exist? file_to_disk
+          vb.customize ['createhd', '--filename', file_to_disk, '--size', 500 * 1024]
+        end
+        vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', file_to_disk]
       end
 
       ip = "172.17.8.#{i+100}"
@@ -137,7 +146,6 @@ Vagrant.configure("2") do |config|
         config.vm.provision :file, :source => "#{CLOUD_CONFIG_PATH}", :destination => "/tmp/vagrantfile-user-data"
         config.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
       end
-
     end
   end
 end
