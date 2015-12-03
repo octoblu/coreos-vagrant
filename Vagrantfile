@@ -127,7 +127,7 @@ Vagrant.configure("2") do |config|
         if ARGV[0] == 'up' && !File.exist?(file_to_touch)
           unless File.exist? file_to_disk
             puts "Creating and attaching extra disk space..."
-            vb.customize ['createhd', '--format', 'VDI', '--filename', file_to_disk, '--size', 500 * 1024]
+            vb.customize ['createhd', '--filename', file_to_disk, '--size', 500 * 1024]
             vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', file_to_disk]
           end
           File.write file_to_touch, ""
@@ -135,7 +135,7 @@ Vagrant.configure("2") do |config|
 
         if ARGV[0] == 'destroy'
           unless File.exist? file_to_disk
-            vb.customize ['createhd', '--filename', file_to_disk, '--size', 500 * 1024]
+            vb.customize ['closemedium', 'disk', file_to_disk]
           end
         end
       end
