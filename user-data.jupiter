@@ -1,0 +1,66 @@
+#cloud-config
+
+---
+coreos:
+  etcd:
+    addr: $public_ipv4:4001
+    peer-addr: $public_ipv4:7001
+    discovery: https://discovery.etcd.io/499f4f0887579d7f9aec7e899678cbc4
+  etcd2:
+    advertise-client-urls: http://$public_ipv4:2379
+    initial-advertise-peer-urls: http://$private_ipv4:2380
+    listen-client-urls: http://0.0.0.0:2379,http://0.0.0.0:4001
+    listen-peer-urls: http://$private_ipv4:2380,http://$private_ipv4:7001
+    discovery: https://discovery.etcd.io/499f4f0887579d7f9aec7e899678cbc4
+  fleet:
+    public-ip: $public_ipv4
+    metadata: Role=octo-runner,Services=true
+  flannel:
+    interface: $public_ipv4
+  units:
+  - name: var-lib-docker.service
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      Description=Mount a big 'ol file
+
+      [Service]
+      ExecStartPre=-/usr/sbin/mkfs.ext4 /dev/sdb
+      ExecStartPre=/usr/bin/mkdir -p /var/lib/docker
+      ExecStart=/usr/bin/mount /dev/sdb /var/lib/docker
+
+      [Install]
+      WantedBy=docker.service
+      Before=docker.service
+  - name: etcd2.service
+    command: start
+  - name: fleet.service
+    command: start
+  - name: docker-tcp.socket
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      Description=Docker Socket for the API
+
+      [Socket]
+      ListenStream=2375
+      Service=docker.service
+      BindIPv6Only=both
+
+      [Install]
+      WantedBy=sockets.target
+  - name: systemd-journal-gatewayd.socket
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      Description=Journal Gateway Service Socket
+
+      [Socket]
+      ListenStream=/var/run/journald.sock
+      Service=systemd-journal-gatewayd.service
+
+      [Install]
+      WantedBy=sockets.target
