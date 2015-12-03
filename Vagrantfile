@@ -122,11 +122,22 @@ Vagrant.configure("2") do |config|
         vb.cpus = vm_cpus
 
         file_to_disk = "/tmp/vagrant-extra-space-#{vm_name}.vdi"
+        file_to_touch = File.join File.dirname(__FILE__), ".vagrant", "machines", vm_name, "GOINGUP"
 
-        unless File.exist? file_to_disk
-          vb.customize ['createhd', '--filename', file_to_disk, '--size', 500 * 1024]
+        if ARGV[0] == 'up' && !File.exist?(file_to_touch)
+          unless File.exist? file_to_disk
+            puts "Creating and attaching extra disk space..."
+            vb.customize ['createhd', '--format', 'VDI', '--filename', file_to_disk, '--size', 500 * 1024]
+            vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', file_to_disk]
+          end
+          File.write file_to_touch, ""
         end
-        vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', file_to_disk]
+
+        if ARGV[0] == 'destroy'
+          unless File.exist? file_to_disk
+            vb.customize ['createhd', '--filename', file_to_disk, '--size', 500 * 1024]
+          end
+        end
       end
 
       ip = "172.17.8.#{i+100}"
