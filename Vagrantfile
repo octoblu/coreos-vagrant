@@ -21,6 +21,7 @@ $vm_cpus = 1
 $shared_folders = {}
 $forwarded_ports = {}
 
+
 # Attempt to apply the deprecated environment variable NUM_INSTANCES to
 # $num_instances while allowing config.rb to override it
 if ENV["NUM_INSTANCES"].to_i > 0 && ENV["NUM_INSTANCES"]
@@ -42,6 +43,65 @@ end
 
 def vm_cpus
   $vb_cpus.nil? ? $vm_cpus : $vb_cpus
+end
+
+disk_size = 500 * 1024
+disk_filename = "extra-space.vdi"
+disk_id_filename = ".disk.id"
+file_root = File.dirname(File.expand_path(__FILE__))
+$disk_id_file = File.join(file_root, disk_id_filename)
+$disk_file = File.join(file_root, disk_filename)
+$disk_size = disk_size.to_s
+
+class VagrantPlugins::ProviderVirtualBox::Action::SetName
+  alias_method :original_call, :call
+  def call(env)
+    ui = env[:ui]
+    controller_name = "SATA Whatever"
+    driver = env[:machine].provider.driver
+    uuid = driver.instance_eval { @uuid }
+    vm_info = driver.execute("showvminfo", uuid)
+    has_controller = vm_info.match("Storage Controller Name.*#{controller_name}")
+    if !File.exist?($disk_file)
+      ui.info "Creating storage file '#{$disk_file}'..."
+      driver.execute(
+        "createmedium", "disk",
+        "--filename", $disk_file,
+        "--format", "VDI",
+        "--size", $disk_size
+      )
+    end
+    if !has_controller
+      ui.info "Creating storage controller '#{controller_name}'..."
+      driver.execute(
+        "storagectl", uuid,
+        "--name", "#{controller_name}",
+        "--add", "sata",
+        "--controller", "IntelAhci",
+        "--portcount", "1",
+        "--hostiocache", "off"
+      )
+    end
+    ui.info "Attaching '#{$disk_file}' to '#{controller_name}'..."
+    driver.execute(
+      "storageattach", uuid,
+      "--storagectl", "#{controller_name}",
+      "--port", "0",
+      "--type", "hdd",
+      "--medium", $disk_file
+    )
+    work_disk_info = driver.execute("showmediuminfo", $disk_file)
+    work_disk_uuid = work_disk_info.match(/^UUID\:\s*([a-z0-9\-]+)/).captures[0]
+    uuid_blocks = work_disk_uuid.split("-")
+    disk_by_id = "ata-VBOX_HARDDISK_VB"
+    disk_by_id += uuid_blocks[0] + "-"
+    disk_by_id += uuid_blocks[-1][10..11]
+    disk_by_id += uuid_blocks[-1][8..9]
+    disk_by_id += uuid_blocks[-1][6..7]
+    disk_by_id += uuid_blocks[-1][4..5]
+    File.open($disk_id_file, "w") {|f| f.write(disk_by_id) }
+    original_call(env)
+  end
 end
 
 Vagrant.configure("2") do |config|
@@ -120,28 +180,6 @@ Vagrant.configure("2") do |config|
         vb.gui = vm_gui
         vb.memory = vm_memory
         vb.cpus = vm_cpus
-
-        file_to_disk = "/tmp/vagrant-extra-space-#{vm_name}.vdi"
-
-        if ARGV[0] == 'up'
-          unless File.exist? file_to_disk
-            puts "Creating and attaching extra disk space...If you see this more than once it is probably failing to create extra space."
-            vb.customize ['createhd', '--filename', file_to_disk, '--size', 500 * 1024]
-            vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', file_to_disk]
-          end
-        end
-
-        file_to_touch = "/tmp/GOINGDOWN_#{vm_name}"
-        if ARGV[0] == 'destroy'
-          if File.exist? file_to_touch
-            File.unlink file_to_touch
-          else
-            puts "Detaching image..."
-            vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--medium', 'none']
-            vb.customize ['closemedium', 'disk', file_to_disk]
-            File.write file_to_touch, ""
-          end
-        end
       end
 
       ip = "172.17.8.#{i+100}"
